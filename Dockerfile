@@ -1,7 +1,7 @@
 FROM --platform=linux/amd64 ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt update -y && apt install --no-install-recommends -y xfce4 xfce4-goodies tigervnc-standalone-server novnc websockify sudo xterm init systemd snapd vim net-tools curl wget git tzdata
+RUN apt update -y && apt install --no-install-recommends -y xfce4 xfce4-goodies tigervnc-standalone-server novnc websockify sudo xterm init systemd snapd vim net-tools curl wget git tzdata openssh-server
 RUN apt update -y && apt install -y dbus-x11 x11-utils x11-xserver-utils x11-apps
 RUN apt install software-properties-common -y
 RUN add-apt-repository ppa:mozillateam/ppa -y
@@ -84,6 +84,25 @@ RUN printf '%s\n' \
     > /root/.vnc/xstartup
 RUN chmod +x /root/.vnc/xstartup
 
+# ---- SSH access (terminal control from Termux etc, key-auth only) ----
+# Root login is allowed but ONLY via SSH key - password auth is fully disabled
+# so this is safe to expose on the public internet via a Railway TCP proxy.
+RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh
+RUN printf '%s\n' \
+    'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHSNDvZGVGUi1EsTjAXaQ47yiILWIm8CaICvBqhiZPj7 alix@termux-railway-vps' \
+    > /root/.ssh/authorized_keys
+RUN chmod 600 /root/.ssh/authorized_keys
+RUN mkdir -p /run/sshd
+RUN printf '%s\n' \
+    'PermitRootLogin prohibit-password' \
+    'PasswordAuthentication no' \
+    'KbdInteractiveAuthentication no' \
+    'PubkeyAuthentication yes' \
+    'X11Forwarding no' \
+    'AllowTcpForwarding yes' \
+    >> /etc/ssh/sshd_config
+
 EXPOSE 5901
 EXPOSE 6080
-CMD bash -c "vncserver -localhost no -SecurityTypes None -depth 16 -geometry 1024x768 --I-KNOW-THIS-IS-INSECURE && openssl req -new -subj "/C=JP" -x509 -days 365 -nodes -out self.pem -keyout self.pem && websockify -D --web=/usr/share/novnc/ --cert=self.pem 6080 localhost:5901 && tail -f /dev/null"
+EXPOSE 22
+CMD bash -c "/usr/sbin/sshd && vncserver -localhost no -SecurityTypes None -depth 16 -geometry 1024x768 --I-KNOW-THIS-IS-INSECURE && openssl req -new -subj "/C=JP" -x509 -days 365 -nodes -out self.pem -keyout self.pem && websockify -D --web=/usr/share/novnc/ --cert=self.pem 6080 localhost:5901 && tail -f /dev/null"
